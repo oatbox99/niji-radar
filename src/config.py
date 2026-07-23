@@ -65,18 +65,19 @@ RIVER_WATER_LEVEL = {
         "map_downstream": "下流（伊勢崎・八斗島）",
     },
     "吾妻川": {
-        # Yahoo river ID 8303030920 (本プロジェクト調査)。station 名は未確認 → 参考。
+        # 本プロジェクト確認: Yahoo 8303030920 は「吾妻川」で 郷原/市城/村上/吾妻橋 等の行あり
+        # (旧「中之条」はこのミラーに水位行が無く常時欠測だった → 実在する下流ゲージへ修正)。
         "yahoo_url": "https://typhoon.yahoo.co.jp/weather/river/8303030920/",
-        "primary_station": "中之条",
-        "stations": ["中之条"],
+        "primary_station": "吾妻橋",
+        "stations": ["郷原", "市城", "村上", "吾妻橋"],   # 上流→下流順・実在確認済
         "map_upstream": "上流（長野原・八ッ場方面）",
         "map_downstream": "下流（渋川・利根川合流）",
     },
     "渡良瀬川": {
-        # 水位観測点(高津戸/足利)は Yahoo ミラーID 未確認 → 水位は参考/欠測扱い。
-        "yahoo_url": None,
+        # 本プロジェクト確認: Yahoo ミラー 8303030461 は「渡良瀬川」で 高津戸/松原橋/足利 等の行あり。
+        "yahoo_url": "https://typhoon.yahoo.co.jp/weather/river/8303030461/",
         "primary_station": "高津戸",
-        "stations": ["高津戸"],
+        "stations": ["花輪", "高津戸", "松原橋", "足利"],   # 上流(草木ダム下流)→下流順・実在確認済
         "map_upstream": "上流（草木ダム・大間々方面）",
         "map_downstream": "下流（桐生・足利）",
     },
@@ -87,9 +88,8 @@ LEVEL_SEVERITY = {"平常": 0, "待機": 1, "注意": 2, "避難": 3, "危険": 
 
 # --------------------------------------------------------------------------- #
 # Dam discharge — 濁り放流リスク。ID は EUC-JP DspDamData から確認したものだけ。
-# 下久保(神流川鬼石) = 本プロジェクト確認。利根川上流5基 = 鮎レーダー確認済み流用。
-# 八ッ場(吾妻)・草木(渡良瀬) は ID 未確認 → 空 (妄想IDを入れない)。当該 reach は
-# ダム放流を「未確認」表示にする。
+# 下久保(神流川鬼石)・八ッ場(吾妻)・草木(渡良瀬) = 本プロジェクトで DspDamData を実取得し
+# ダム名・放流量行を確認済み。利根川上流5基 = 鮎レーダー確認済み流用。妄想IDは入れない方針。
 # --------------------------------------------------------------------------- #
 DAM_ENDPOINT = "http://www1.river.go.jp/cgi-bin/DspDamData.exe?ID={id}&KIND=3&PAGE=0"
 DAM_DISCHARGE = {
@@ -103,8 +103,12 @@ DAM_DISCHARGE = {
     "神流川": {
         "下久保": "1368030375210",   # 本プロジェクト確認 (鬼石 reach の濁り支配)
     },
-    # "吾妻川": {"八ッ場": "<ID未確認>"},   # ID確認でき次第追加
-    # "渡良瀬川": {"草木": "<ID未確認>"},
+    "吾妻川": {
+        "八ッ場": "303031283317025",   # 本プロジェクト確認: DspDamData が「八ッ場ダム」を返し放流量あり
+    },
+    "渡良瀬川": {
+        "草木": "1368030375180",       # 本プロジェクト確認: DspDamData が「草木ダム」を返し放流量あり
+    },
 }
 DAM_SURGE_FRACTION = 0.30
 DAM_MIN_FLOW_M3S = 30.0
@@ -112,6 +116,8 @@ DAM_MIN_FLOW_M3S = 30.0
 DAM_DIST_KM = {
     "矢木沢": 80.0, "奈良俣": 78.0, "藤原": 70.0, "相俣": 55.0, "薗原": 40.0,
     "下久保": 15.0,   # 下久保→鬼石は近い
+    "八ッ場": 40.0,   # 八ッ場(長野原)→阪東子持(渋川方面)吾妻川沿い・地図目測
+    "草木": 12.0,     # 草木(東町)→高津戸(大間々)渡良瀬川本流・地図目測
 }
 DAM_CELERITY_MS = (1.5, 2.5)
 
@@ -166,9 +172,9 @@ REACHES = {
     "agatsuma_bando": {
         "label": "吾妻川 阪東・子持エリア",
         "river": "吾妻川",
-        "location": "中之条",
-        "water_station": "中之条",
-        "dams": ["八ッ場"],               # ID未確認 → ダム放流は未確認表示
+        "location": "中之条",             # 気象=中之条AMeDAS(42186)。水位ゲージは別(吾妻橋)
+        "water_station": "吾妻橋",         # 吾妻川下流ゲージ(子持に最も近い実在観測点)
+        "dams": ["八ッ場"],               # DspDamData ID確認済(放流量取得可)
         "methods": ["ルアー", "フライ", "エサ"],
         "catch_release": False,
         "season": {"open": (3, 1), "close": (9, 20)},
@@ -178,14 +184,14 @@ REACHES = {
         "info_url": "https://bando-fc.com/",
         "catch_ref_url": "https://anglers.jp/",
         "source_confidence": "参考",
-        "notes": "八ッ場ダム放流の影響区間。情報が薄く、期間/料金は電話確認前提。",
+        "notes": "八ッ場ダム放流の影響区間（ダム放流量は取得配線済）。区間/期間/料金は漁協で要確認。",
     },
     "watarase_kiryu": {
         "label": "渡良瀬川 桐生エリア",
         "river": "渡良瀬川",
         "location": "桐生",
         "water_station": "高津戸",
-        "dams": ["草木"],                 # ID未確認 → ダム放流は未確認表示
+        "dams": ["草木"],                 # DspDamData ID確認済(放流量取得可)
         "methods": ["ルアー", "フライ", "エサ"],
         "catch_release": False,
         "season": {"open": (3, 1), "close": (9, 20)},
@@ -195,7 +201,7 @@ REACHES = {
         "info_url": "http://ryomo-fishing.com/",
         "catch_ref_url": "https://anglers.jp/",
         "source_confidence": "参考",
-        "notes": "草木ダム放流の影響区間。両毛漁協サイトはSSL失効。水位観測点ID未確認。",
+        "notes": "草木ダム放流の影響区間（ダム放流量・高津戸水位とも取得配線済）。両毛漁協サイトはSSL失効。",
     },
     "kanna_oniishi": {
         "label": "神流川 鬼石エリア（下久保ダム下流）",
