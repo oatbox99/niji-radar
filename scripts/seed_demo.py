@@ -52,6 +52,20 @@ def _seed_weather(conn, location, rng, scours):
         )
 
 
+def _seed_lake_weather(conn, location, rng, lo, hi):
+    """湖のAMeDAS地点の気温(標高補正前)を DAYS 日分。"""
+    for offset in range(DAYS - 1, -1, -1):
+        day = TODAY - dt.timedelta(days=offset)
+        mean = round(rng.uniform(lo, hi), 1)
+        conn.execute(
+            """INSERT OR REPLACE INTO weather_data
+               (date, location, sunshine_hours, mean_temp, max_temp, min_temp,
+                sunshine_estimated, source)
+               VALUES (?, ?, ?, ?, ?, ?, 1, 'seed_demo')""",
+            (day.isoformat(), location, round(rng.uniform(3.0, 6.0), 1), mean,
+             round(mean + 4, 1), round(mean - 3, 1)))
+
+
 def _seed_gauges_today(conn, river, water_temp):
     for name in config.RIVER_WATER_LEVEL[river]["stations"]:
         conn.execute(
@@ -87,8 +101,20 @@ def main() -> None:
         _seed_weather(conn, "前橋", random.Random(99), set())
         _seed_weather(conn, "中之条", random.Random(55), set())
         _seed_weather(conn, "桐生", random.Random(77), set())
-        for loc in ("上野村", "前橋", "中之条", "桐生"):
+        # 湖のAMeDAS地点(標高補正前の気温)。藤原(700m)→菅沼/丸沼/大尻沼、草津(1223m)→野反湖。
+        # 榛名湖は中之条(354m・上で河川用にseed済)を標高補正で共用するため個別seedは不要。
+        # 藤原/草津は高標高湖の観測点として少し高めに置き、標高減率補正で適水温になる様子を再現。
+        _seed_lake_weather(conn, "藤原", random.Random(21), lo=18.0, hi=22.0)
+        _seed_lake_weather(conn, "草津", random.Random(22), lo=14.0, hi=18.0)
+        for loc in ("上野村", "前橋", "中之条", "桐生", "藤原", "草津"):
             _seed_forecast(conn, loc, random.Random(hash(loc) % 1000))
+        # 野反湖: 放流カレンダー(直近放流を1件)
+        conn.execute(
+            "INSERT OR REPLACE INTO stocking_data(reach_id, stock_date, source_name, "
+            "source_post_date, confidence, raw_excerpt) VALUES ('nozorilake', ?, 'seed_demo', "
+            "?, 0.7, '（デモ）ニジマス放流')",
+            ((TODAY - dt.timedelta(days=2)).isoformat(),
+             (TODAY - dt.timedelta(days=2)).isoformat()))
 
         # --- 神流川: scour story + calm gauges today ---
         for offset in KANNA_SCOURS:

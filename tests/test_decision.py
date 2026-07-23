@@ -4,6 +4,8 @@
 """
 from __future__ import annotations
 
+import datetime as _dt
+
 from src import db
 from src.decision import (
     CAUTION,
@@ -258,3 +260,74 @@ def test_reach_report_assembles_verdict_from_db(tmp_path):
     assert v.series and v.series[-1].date == "2026-01-15"
     assert v.level == GO                          # verified + 好条件 + 笹濁り + 平水
     assert v.stations                             # 観測点ステータスが載る
+
+
+# --------------------------------------------------------------------------- #
+# 湖(止水)パス: 表層水温(標高補正)×季節×営業。増水/濁り/ダムは無効。
+# --------------------------------------------------------------------------- #
+def _seed_lake_weather(conn, location, mean, today):
+    t0 = _dt.date.fromisoformat(today)
+    for i in range(10, -1, -1):
+        d = (t0 - _dt.timedelta(days=i)).isoformat()
+        conn.execute("INSERT OR REPLACE INTO weather_data (date, location, sunshine_hours, "
+                     "mean_temp, max_temp, min_temp, sunshine_estimated, source) "
+                     "VALUES (?, ?, 4.0, ?, ?, ?, 1, 't')",
+                     (d, location, mean, mean + 4, mean - 3))
+    conn.commit()
+
+
+def test_lake_spring_cool_verified_is_go(tmp_path):
+    p = tmp_path / "t.db"
+    db.init_db(p)
+    conn = db.connect(p)
+    try:
+        _seed_lake_weather(conn, "藤原", 18.0, "2026-05-20")   # 丸沼 verified(観測点=藤原700m)・適水温
+        v = reach_report(conn, "marunuma", params=P, today="2026-05-20")
+    finally:
+        conn.close()
+    assert v.waterbody == "lake"
+    assert v.level == GO
+    assert v.water_temp_proxy is not None
+    assert any("躍層" in c for c in v.caveats)                 # 深度不確実性を明示
+    assert "river" not in dir(v) or v.water_status is None      # 河川フィールドは空
+
+
+def test_lake_low_elev_summer_hot_is_nogo(tmp_path):
+    p = tmp_path / "t.db"
+    db.init_db(p)
+    conn = db.connect(p)
+    try:
+        _seed_lake_weather(conn, "中之条", 35.0, "2026-08-15")  # 榛名湖(観測点=中之条354m)・盛夏の表層高温
+        v = reach_report(conn, "harunako", params=P, today="2026-08-15")
+    finally:
+        conn.close()
+    assert v.level == NO_GO                                    # 生息不適/高水温
+    assert v.source_confidence == "参考"
+
+
+def test_lake_out_of_season_is_nogo(tmp_path):
+    p = tmp_path / "t.db"
+    db.init_db(p)
+    conn = db.connect(p)
+    try:
+        _seed_lake_weather(conn, "草津", 5.0, "2026-01-15")     # 野反湖 冬季閉鎖
+        v = reach_report(conn, "nozorilake", params=P, today="2026-01-15")
+    finally:
+        conn.close()
+    assert v.level == NO_GO
+    assert "湖" in v.reasons[0]                                # 湖用の閉鎖文言(河川文言でない)
+
+
+def test_lake_checklist_has_lake_rows(tmp_path):
+    p = tmp_path / "t.db"
+    db.init_db(p)
+    conn = db.connect(p)
+    try:
+        _seed_lake_weather(conn, "藤原", 18.0, "2026-06-10")   # 菅沼(観測点=藤原700m)
+        v = reach_report(conn, "sugenuma", params=P, today="2026-06-10")
+    finally:
+        conn.close()
+    labels = [r["label"] for r in go_checklist(v)]
+    assert "営業/解禁期間内" in labels
+    assert any("表層" in x for x in labels)                    # 湖は表層水温ベース
+    assert not any("水位" in x or "濁り" in x for x in labels)   # 河川行は出ない

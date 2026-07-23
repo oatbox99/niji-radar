@@ -384,7 +384,8 @@ def _ingest_weather(conn: sqlite3.Connection) -> Dict[str, Optional[float]]:
 def _ingest_rivers(conn: sqlite3.Connection, proxies: Dict[str, Optional[float]]) -> None:
     """Fetch water stage + dams per unique river."""
     # map river -> a representative location's proxy temp (for the river_physical rows)
-    river_loc = {r["river"]: r["location"] for r in config.REACHES.values()}
+    river_loc = {r["river"]: r["location"] for r in config.REACHES.values()
+                 if r.get("waterbody", "river") == "river"}
     for river in config.unique_rivers():
         wt = proxies.get(river_loc.get(river))
         try:
