@@ -1,0 +1,78 @@
+# 無料の自動公開（任意）。有効化: このリポを GitHub に push → Settings > Pages > Source を
+# "GitHub Actions" に → (semantic を使うなら) Secrets に GEMINI_API_KEY を登録。
+# 日次で公開データを収集し静的HPを再生成して Pages に配信する。
+#
+# 精度の要: TSI は水温が主軸で日ごと独立に算出するが、前回比/予実照合の台帳(verdict_snapshot)と
+# 現場報告の蓄積は履歴が要る。まっさらな CI だと毎回リセットされるため data/niji.db をキャッシュで
+# 永続化する。初回だけ同梱シード data/niji_seed.db から引き継ぐ。APIキーは出力HTMLには残らない。
+#
+# 対象区間は季節がバラバラ（冬期C&R=10〜2月 / 一般渓流=3〜9月）なので日次は通年で回す。
+name: publish-niji-radar
+
+on:
+  schedule:
+    - cron: "30 22 * * *"        # UTC 22:30 = 翌 07:30 JST（毎朝）
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: pip install -r requirements.txt
+
+      # 履歴を持つ DB を復元（無ければ最新の nijidb-* から）→ 収集で追記 → 保存。
+      - name: Restore accumulated DB
+        uses: actions/cache/restore@v4
+        with:
+          path: data/niji.db
+          key: nijidb-${{ github.run_id }}
+          restore-keys: nijidb-
+
+      # キャッシュが無い初回だけ、リポ同梱のシードDB（実履歴・公開データのみ）から引き継ぐ。
+      - name: Seed DB on first run
+        run: |
+          if [ ! -f data/niji.db ] && [ -f data/niji_seed.db ]; then
+            cp data/niji_seed.db data/niji.db
+            echo "seeded from data/niji_seed.db"
+          fi
+
+      # 収集 + 判定スナップショット（前回比/予実照合の台帳） + 静的HP生成 を一括。
+      # GEMINI_API_KEY 未設定なら daily_update が semantic を自動スキップ（ログに明記）。
+      - name: Ingest + snapshot + build static HP
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          mkdir -p public
+          python -m scripts.daily_update public/index.html --full
+
+      - name: Save accumulated DB
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: data/niji.db
+          key: nijidb-${{ github.run_id }}
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+
+      - id: deploy
+        uses: actions/deploy-pages@v4
