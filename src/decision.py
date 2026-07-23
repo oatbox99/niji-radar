@@ -484,8 +484,9 @@ def _lake_checklist(v: Verdict) -> List[Dict[str, Any]]:
     surf = v.water_temp_proxy
     open_ok = reach_open(config.REACHES[v.reach_id],
                          v.as_of or dt.date.today().isoformat())["open"]
-    cr_ok = v.cr_risk in ("safe", "caution", None) or not v.catch_release
-    shallow = surf is not None and surf <= p.t_stress          # 表層に魚(浅場で狙える)
+    # 湖 GO(_lake_report line 623)も cr in (safe,caution) を必須にしている → SSOT を合わせる。
+    cr_ok = v.cr_risk in ("safe", "caution")
+    shallow = surf is not None and surf <= p.t_stress          # 表層水温が浅場向き
     return [
         {"label": "営業/解禁期間内", "ok": open_ok, "detail": config.REACHES[v.reach_id]["label"]},
         {"label": "表層水温がC&Rに安全" if v.catch_release else "表層水温が適域",
@@ -493,8 +494,10 @@ def _lake_checklist(v: Verdict) -> List[Dict[str, Any]]:
         {"label": "表層が適水温（浅場で狙える）", "ok": v.effective_quality in ("好適", "絶好"),
          "unknown": surf is None,
          "detail": (f"表層 推定{surf:.0f}℃" if surf is not None else "推定不可")},
-        {"label": "深場探索が不要（表層に魚）", "ok": shallow, "unknown": surf is None,
-         "detail": ("表層に居ます" if shallow else "魚は深場（要ボート/ディープ）")},
+        # 躍層/DO/深度は未実測プロキシ → 魚の居場所を断定しない(「可能性」「要探索」表現に留める)。
+        {"label": "浅場で狙える可能性（表層水温ベース）", "ok": shallow, "unknown": surf is None,
+         "detail": ("表層水温は浅場向き（躍層・DO未実測のため要探索）" if shallow
+                    else "表層が高く魚は深場寄り（要深度探索）")},
     ]
 
 
@@ -516,7 +519,9 @@ def go_checklist(v: Verdict) -> List[Dict[str, Any]]:
         hazard_detail = "泥濁り・増水なし／水位取得済（上流ダム放流は一部欠測・要現地確認）"
     else:
         hazard_detail = "泥濁り・増水・ダム放流なし／水位取得済"
-    cr_ok = v.cr_risk in ("safe", "caution", None) or not v.catch_release
+    # build_verdict Gate3 は catch_release に関わらず cr in (safe,caution) を GO 必須にしている
+    # (line 370-371)。SSOT を保つため、非C&R でも水温不明(unknown)/高水温(strong/nogo)は非グリーン。
+    cr_ok = v.cr_risk in ("safe", "caution")
     return [
         {"label": "危険がない", "ok": hazard_ok, "detail": hazard_detail,
          "unknown": (not hazard_ok and v.water_status is None
@@ -534,8 +539,11 @@ def go_checklist(v: Verdict) -> List[Dict[str, Any]]:
          "unknown": v.turbidity is None,
          "detail": ("情報なし — 現地で水の色を目視確認してください"
                     if v.turbidity is None else _TURB_WORD.get(v.turbidity))},
-        {"label": "水位が平常", "ok": sev == 0 and v.water_status is not None,
-         "unknown": v.water_status is None, "detail": v.water_status or "不明（未取得）"},
+        {"label": "水位が平常（上昇していない）",
+         "ok": sev == 0 and v.water_status is not None and v.water_trend != "上昇",
+         "unknown": v.water_status is None,
+         "detail": (v.water_status or "不明（未取得）")
+         + ("・上昇中" if v.water_trend == "上昇" else "")},
     ]
 
 
@@ -638,16 +646,16 @@ def _lake_report(conn: sqlite3.Connection, reach_id: str, p: TroutParams,
         caveats.append(f"この湖はデータ源が『{src_conf}』レベルのため、確信を持ったGOは出していません"
                        "（正確な期間・ルール・ニジマスの成立は要現地確認）")
 
-    # confidence
+    # confidence — 湖は「会場検証(source_confidence)」と「水温データ品質」を分離して評価する。
+    # verified でも表層水温は気温＋標高補正の二段推定なので、確信を高くしすぎない(上限も抑える)。
     conf = 0.95 - 0.15                       # 気温プロキシ
     conf -= 0.15                             # 深度/DO/躍層が実測でない(湖固有の大きな不確実性)
-    if abs(offset) >= 5:
-        conf -= 0.10
+    conf -= 0.02 * abs(offset)              # 標高補正が大きいほど連続的に減点(外挿誤差)
     if src_conf != "verified":
         conf -= 0.15
     if surf is None:
         conf -= 0.20
-    conf = max(0.10, min(0.90, conf))
+    conf = max(0.10, min(0.85, conf))       # 湖は実測水温源が無いため上限0.85(河川0.95より低い)
 
     caveats.append("水温は気温＋標高補正からの推定で未較正です（『実測』ではありません）")
     caveats.append("躍層・溶存酸素・魚の居る深度は公開の実測源が無く、季節からの推定に留まります"
@@ -691,7 +699,7 @@ def _lake_headline(level, surf, cr, reach):
             return "表層水温が高く、リリースした魚が危険です。魚のために見送りを"
         return "見送りをおすすめします。営業期間・水温をご確認ください"
     if level == GO:
-        return "表層が適水温です。浅場・ショアから狙える好機です🎣"
+        return "表層が適水温（推定）。浅場・ショアから狙える好機です🎣（水温は推定値）"
     if surf is not None and surf > 20:
         return "表層は高水温。魚は深場です。狙うなら深度を落として、朝夕に"
     return "判断の難しい状況です。深度を刻んで探る前提でお楽しみください"

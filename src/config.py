@@ -20,6 +20,9 @@ JMA_FORECAST_TEMP_AREA = "前橋"
 LOCATION_TEMP_OFFSET = {
     "前橋": 0.0, "桐生": 0.0,
     "上野村": -2.5, "中之条": -1.5, "沼田": -1.5,
+    # 湖の観測点(高標高)。前橋(112m)→観測点標高の気温減率。無いと予報の表層水温が系統的に高すぎる。
+    "藤原": -3.5,   # 700m: -0.6×(700-112)/100
+    "草津": -6.7,   # 1223m: -0.6×(1223-112)/100
 }
 JMA_AMEDAS_PAGE = "https://www.jma.go.jp/bosai/amedas/#amdno={code}"
 JMA_FORECAST_PAGE = ("https://www.jma.go.jp/bosai/forecast/"

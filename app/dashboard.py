@@ -176,10 +176,15 @@ def _datebar(v: decision.Verdict) -> None:
 
 def _checklist(v: decision.Verdict) -> None:
     rows = decision.go_checklist(v)
+    n_fail = sum(1 for r in rows if not r["ok"])
     if v.level == "GO":
         head = "✅ 条件をすべて満たしています（行くべし）"
+    elif n_fail == 0:
+        # 全ゲート充足だが GO でない = 参考データ源の格下げ/午後高水温等の追加注意。
+        head = ("GO条件は満たしていますが、参考データ源のため確信GOを保留しています"
+                if v.source_confidence != "verified"
+                else "GO条件は満たしていますが、追加の注意で様子見にしています")
     else:
-        n_fail = sum(1 for r in rows if not r["ok"])
         head = f"『行くべし』に届かない理由（未充足 {n_fail}件）"
     lis = "".join(
         f'<li class="{"ck-ok" if r["ok"] else "ck-no"}">'
@@ -215,10 +220,12 @@ def _water_cr(v: decision.Verdict) -> None:
         f'<div class="v">{cr_v}</div><div class="mean">{cr_mean}</div></div>',
         unsafe_allow_html=True)
     if v.waterbody == "lake":
+        shore = config.REACHES[v.reach_id].get("shore_only", False)
+        depth_msg = ("本日は見送り推奨。狙い方は次の好機日に。" if v.level == "NO_GO"
+                     else guide.lake_depth_note(v.water_temp_proxy, shore_only=shore))
         cols[2].markdown(
             f'<div class="card"><div class="k">🪝 狙う深度（推定）</div>'
-            f'<div class="v" style="font-size:.98rem;line-height:1.4">'
-            f'{guide.lake_depth_note(v.water_temp_proxy)}</div>'
+            f'<div class="v" style="font-size:.98rem;line-height:1.4">{depth_msg}</div>'
             f'<div class="mean">躍層・DO・魚の層は実測源なし＝季節推定（中層を刻んで探る前提）</div></div>',
             unsafe_allow_html=True)
     else:
@@ -406,7 +413,11 @@ def _lake_context(v: decision.Verdict) -> None:
     st.markdown("#### 🏞 なぜ深度で釣果が決まるのか（湖の成層）")
     st.markdown(f'<div class="card" style="color:inherit">{guide.WHY_LAKE}</div>',
                 unsafe_allow_html=True)
-    st.info("🪝 " + guide.lake_depth_note(v.water_temp_proxy))
+    if v.level == "NO_GO":
+        st.info("🪝 本日は見送り推奨（営業期間外／表層高温）。深度戦略は次の好機日にご覧ください。")
+    else:
+        shore = config.REACHES[v.reach_id].get("shore_only", False)
+        st.info("🪝 " + guide.lake_depth_note(v.water_temp_proxy, shore_only=shore))
     st.caption("⚠️ 湖は増水・濁り・上流ダム放流の判定を行いません（止水のため）。"
                "表層水温は気温＋標高補正の推定で未較正、躍層・溶存酸素・魚の居る深度は"
                "公開の実測源が無く季節推定です。結氷・水位・水色は現地/公式でご確認ください。")

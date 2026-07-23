@@ -222,6 +222,30 @@ def test_go_checklist_labels_match_catch_release_flag():
     assert "水温が適域" in gen_labels
 
 
+def test_rising_water_trend_blocks_go_and_checklist_row():
+    # 平常だがトレンド上昇: Gate3 は w_trend != "上昇" を GO 必須にしている。checklist の
+    # 水位行も同条件を見る(旧: sev のみ判定で 6/6緑なのに CAUTION の SSOT不整合を回帰ガード)。
+    rising = {"water_level_status": "平常", "water_trend": "上昇"}
+    v = _verdict("kanna_ueno", _state(quality="好適"), SEM_SASA, rising)
+    v.as_of = WINTER
+    assert v.level != GO                          # 上昇トレンドで確信GOは出さない
+    row = next(r for r in go_checklist(v) if "水位が平常" in r["label"])
+    assert row["ok"] is False and "上昇中" in row["detail"]
+
+
+def test_non_cr_unknown_water_temp_blocks_checklist_temp_row():
+    # 非C&R区間で水温不明(cr=unknown): Gate3 は cr in (safe,caution) を GO 必須にしている。
+    # checklist の水温行を「not catch_release で常時True」にしない(SSOT不整合の回帰ガード)。
+    wx_none = {"mean_temp": None, "max_temp": None, "sunshine_hours": None,
+               "sunshine_estimated": 0}
+    st = _state(quality="好適", water_temp=None, cr="unknown", date=SUMMER)
+    v = _verdict("kanna_oniishi", st, SEM_SASA, GOOD_WATER, wx=wx_none, today=SUMMER)
+    v.as_of = SUMMER
+    assert v.cr_risk == "unknown" and v.level != GO
+    row = next(r for r in go_checklist(v) if r["label"] == "水温が適域")
+    assert row["ok"] is False and row.get("unknown") is True
+
+
 def test_go_checklist_marks_unknown_turbidity():
     v = _verdict("kanna_ueno", _state(quality="好適"), None, GOOD_WATER)
     v.as_of = WINTER
