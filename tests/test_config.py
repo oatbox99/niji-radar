@@ -44,12 +44,11 @@ def test_unique_locations_and_rivers_dedupe():
 
 
 def test_reach_dams_only_returns_verified_dam_ids():
-    # 下久保は DAM_DISCHARGE に実在ID → 名前:ID を返す
-    oniishi = config.reach_dams("kanna_oniishi")
-    assert oniishi == {"下久保": config.DAM_DISCHARGE["神流川"]["下久保"]}
-    # 八ッ場は ID 未確認 (DAM_DISCHARGE に無い) → 妄想IDを返さず空
-    assert config.reach_dams("agatsuma_bando") == {}
-    assert config.reach_dam_names("agatsuma_bando") == ["八ッ場"]   # 名前は残す(未確認明示)
+    # 下久保/八ッ場/草木は DAM_DISCHARGE に実在ID(実取得確認済) → 名前:ID を返す
+    assert config.reach_dams("kanna_oniishi") == {"下久保": config.DAM_DISCHARGE["神流川"]["下久保"]}
+    assert config.reach_dams("agatsuma_bando") == {"八ッ場": config.DAM_DISCHARGE["吾妻川"]["八ッ場"]}
+    assert config.reach_dams("watarase_kiryu") == {"草木": config.DAM_DISCHARGE["渡良瀬川"]["草木"]}
+    assert config.reach_dam_names("agatsuma_bando") == ["八ッ場"]
     # 自然流量区間はダム監視なし
     assert config.reach_dams("kanna_ueno") == {}
     assert config.reach_dam_names("kanna_ueno") == []

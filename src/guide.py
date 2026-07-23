@@ -336,8 +336,11 @@ WHY_LAKE = (
 )
 
 
-def lake_depth_note(surf: Optional[float]) -> str:
-    """表層水温から狙うべき深度レンジ/手法の目安（推定・断定しない）。"""
+def lake_depth_note(surf: Optional[float], shore_only: bool = False) -> str:
+    """表層水温から狙うべき深度レンジ/手法の目安（推定・断定しない）。
+
+    shore_only の湖（野反湖など）ではボート手法を出さず、岸釣りの範囲に絞る。
+    """
     if surf is None:
         return "表層水温が推定できません。現地で水温を確かめ、表層→中層→深場と刻んで探ってください。"
     if surf < 5:
@@ -346,6 +349,9 @@ def lake_depth_note(surf: Optional[float]) -> str:
         return "表層が適水温。浅場〜表層(〜3m)でショアからも狙えます。ミノー・スプーン・フライの表層〜中層。"
     if surf <= 20:
         return "表層はやや高め。中層を刻んでレンジを探ってください。朝夕まづめが有利です。"
+    if shore_only:
+        return ("表層が高水温で魚は深場寄り。岸釣り限定のこの湖では、朝夕まづめの深い岸・"
+                "流れ込み(冷水)・沖のブレイクに届く場所へ絞りを。日中は厳しめです。")
     return ("表層が高水温で魚は深場へ。ボート/トローリング/ジギングで躍層直上の冷水層を。"
             "岸釣りなら朝夕まづめの深い岸・流れ込み(冷水)に絞りを。")
 

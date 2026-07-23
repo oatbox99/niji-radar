@@ -108,3 +108,14 @@ def test_trout_stages_states_match_quality_vocabulary():
 
 def test_verdict_oneliner_covers_all_levels():
     assert set(guide.VERDICT_ONELINER) == {"GO", "CAUTION", "NO_GO"}
+
+
+def test_lake_depth_note_shore_only_drops_boat_advice():
+    # shore_only の湖(野反湖など)は高水温時でもボート/トローリングを主推奨しない
+    boat = guide.lake_depth_note(24.0, shore_only=False)
+    shore = guide.lake_depth_note(24.0, shore_only=True)
+    assert "ボート" in boat and "トローリング" in boat
+    assert "ボート" not in shore and "トローリング" not in shore
+    assert "岸釣り" in shore
+    # 適水温帯では両者とも岸から狙える案内(ボート限定にしない)
+    assert "ショア" in guide.lake_depth_note(14.0, shore_only=True)

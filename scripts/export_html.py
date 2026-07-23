@@ -248,6 +248,12 @@ def _depth_layers(surf):
 # --------------------------------------------------------------------------- #
 # panels（データ取得と正直さは現行を維持。見た目のみ刷新）
 # --------------------------------------------------------------------------- #
+def _static_fresh_label(fresh):
+    """静的ページ用の鮮度ラベル: days==0 の「本日反映」断定を避け、生成時点基準の非減衰表現へ。
+    閲覧時の実日付を知り得ない静的HTMLでも古さを隠さない(実際の古さは genstamp で判断)。"""
+    return "生成時点で最新" if fresh["days"] == 0 else fresh["label"]
+
+
 def _asof_line(v, run_date):
     fresh = guide.freshness(v.as_of, run_date)
     obs_times = [s.get("date_time") for s in (v.stations or {}).values() if s.get("date_time")]
@@ -259,7 +265,8 @@ def _asof_line(v, run_date):
         else:
             upd = f'・水位更新 {latest_obs[11:16]}'
     return (f'<div class="asof"><span class="asof__cal">{guide.jp_date(v.as_of, with_year=True)} の'
-            f'データ</span><span class="fresh fresh--{fresh["level"]}">{fresh["label"]}</span>'
+            f'データ</span><span class="fresh fresh--{fresh["level"]}">'
+            f'{_static_fresh_label(fresh)}</span>'
             f'<span class="src">{upd}</span></div>')
 
 
@@ -321,6 +328,12 @@ def _checklist_panel(v):
         f'<span class="gdetail">{r["detail"]}</span></li>' for r in rows)
     if v.level == "GO":
         head = '<div class="gate__head allok">GO条件をすべて充足 — 『行くべし』</div>'
+    elif n_fail == 0 and n_unk == 0:
+        # 全ゲート充足だが GO でない = チェックリスト外の理由での格下げ(参考データ源/午後高水温等)。
+        why = ("参考データ源のため確信GOを保留しています（現地確認前提の様子見）"
+               if v.source_confidence != "verified"
+               else "追加の注意（高水温予報など）で様子見にしています")
+        head = f'<div class="gate__head">GO条件は満たしていますが、{why}</div>'
     else:
         parts = []
         if n_fail:
@@ -338,7 +351,13 @@ def _checklist_panel(v):
 
 def _tips_panel(v):
     if v.waterbody == "lake":
-        note = guide.lake_depth_note(v.water_temp_proxy)
+        # NO_GO(営業期間外/表層高温でC&R危険)のときは「どう釣るか」を出さない — 見送り判定と矛盾させない。
+        if v.level == "NO_GO":
+            return ('<div class="panel"><b class="panel__h">今日の狙い方</b>'
+                    '<p class="tipline">本日は見送り推奨です（営業期間外、または表層が高水温で'
+                    'リリースした魚に危険）。深度戦略は次の好機日にご覧ください。</p></div>')
+        shore = config.REACHES[v.reach_id].get("shore_only", False)
+        note = guide.lake_depth_note(v.water_temp_proxy, shore_only=shore)
         return ('<div class="panel"><b class="panel__h">今日の狙い方（深度戦略）</b>'
                 f'{_depth_layers(v.water_temp_proxy)}'
                 f'<p class="tipline">{note}</p>'
@@ -1156,25 +1175,51 @@ def build_html(conn, run_date=None, full_document=False) -> str:
     grid_verified = [it for it in grid_items if it["v"].source_confidence == "verified"]
     grid_refs = [it for it in grid_items if it["v"].source_confidence != "verified"]
 
-    hero_html = _hero(hero_item, run_date) if hero_item else ""
-    grid = '<section class="grid">' + "".join(_card(it, run_date) for it in grid_verified)
+    # 描画段も区間単位で隔離する: 1区間のカード/ヒーロー描画例外が全10区間+ページ全体を
+    # 落とさないよう、reach_report の隔離(上のループ)と対称に per-item で握る。
+    def _safe_card(it):
+        try:
+            return _card(it, run_date)
+        except Exception as exc:  # noqa: BLE001 — 1区間の描画失敗を隔離（他区間と全体は続行）
+            logger.warning("reach %s のカード描画に失敗（スキップ）: %s", it["reach"]["label"], exc)
+            return ""
+
+    def _safe_hero(it):
+        try:
+            return _hero(it, run_date)
+        except Exception as exc:  # noqa: BLE001 — ヒーロー描画失敗時はカードとして下段へ回す
+            logger.warning("reach %s のヒーロー描画に失敗（カードへ降格）: %s",
+                           it["reach"]["label"], exc)
+            return None
+
+    hero_html = ""
+    if hero_item:
+        hero_html = _safe_hero(hero_item) or ""
+        if not hero_html:                       # ヒーロー描画失敗 → グリッド側で拾う
+            grid_verified = ([hero_item] + grid_verified
+                             if hero_item["v"].source_confidence == "verified"
+                             else grid_verified)
+            grid_refs = (grid_refs if hero_item["v"].source_confidence == "verified"
+                         else [hero_item] + grid_refs)
+    grid = '<section class="grid">' + "".join(_safe_card(it) for it in grid_verified)
     if grid_refs:
         grid += ('<div class="refhead"><h2>参考区間・参考湖（物理データ + 注意書きに留めます）</h2>'
                  '<p class="src">以下は公式データ源の実在確認が『参考』レベルの区間・湖です。'
                  '物理データ（気象・水位・水温・ダム放流）と季節の注意書きは正直に出しますが、'
                  '確信を持った『行くべし』は出しません（システムが自動で様子見へ格下げ済み）。'
                  '正確な期間・区間・遊漁ルールは各漁協・現地にご確認ください。</p></div>')
-        grid += "".join(_card(it, run_date) for it in grid_refs)
+        grid += "".join(_safe_card(it) for it in grid_refs)
     grid += '</section>'
 
     page_asof = max(as_ofs) if as_ofs else None
     # Static snapshot: show the DATA date and the PAGE-GENERATION time separately so a
     # frozen page can't masquerade as "現在". No decaying "本日反映" badge here.
     page_fresh = guide.freshness(page_asof, run_date)
+    fresh_label = _static_fresh_label(page_fresh)
     datebar = (f'<div class="datebar"><span class="datebar__cal">'
                f'{guide.jp_date(page_asof, with_year=True)}</span>'
                '<span class="datebar__note">のデータ（毎日更新のスナップショット）</span>'
-               f'<span class="fresh fresh--{page_fresh["level"]}">{page_fresh["label"]}</span>'
+               f'<span class="fresh fresh--{page_fresh["level"]}">{fresh_label}</span>'
                f'<span class="genstamp">ページ生成 {generated}</span></div>')
     legend = ('<div class="legend">'
               '<span><i class="dot dot--go"></i>行くべし＝好条件</span>'
