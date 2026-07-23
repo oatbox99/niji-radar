@@ -3,11 +3,13 @@ from __future__ import annotations
 
 from src import config
 
-_REQUIRED_KEYS = {
-    "label", "river", "location", "water_station", "dams", "methods",
-    "catch_release", "season", "closed_weekday", "source_confidence",
-    "official_url", "info_url",
+# 河川/湖 共通の必須キー
+_COMMON_KEYS = {
+    "label", "location", "methods", "catch_release", "season", "closed_weekday",
+    "source_confidence", "official_url", "info_url",
 }
+_RIVER_KEYS = {"river", "water_station", "dams"}
+_LAKE_KEYS = {"elevation"}
 
 
 def test_ui_reaches_all_exist_in_reaches():
@@ -17,7 +19,9 @@ def test_ui_reaches_all_exist_in_reaches():
 
 def test_every_reach_has_required_keys():
     for rid, reach in config.REACHES.items():
-        assert _REQUIRED_KEYS <= set(reach), f"{rid} に必須キー欠落"
+        assert _COMMON_KEYS <= set(reach), f"{rid} に共通必須キー欠落"
+        extra = _LAKE_KEYS if reach.get("waterbody") == "lake" else _RIVER_KEYS
+        assert extra <= set(reach), f"{rid} に{'湖' if extra is _LAKE_KEYS else '河川'}必須キー欠落"
         assert set(reach["season"]) == {"open", "close"}
         assert isinstance(reach["catch_release"], bool)
         assert isinstance(reach["methods"], list) and reach["methods"]
@@ -54,6 +58,24 @@ def test_reach_dams_only_returns_verified_dam_ids():
 def test_reach_dam_ids_exist_in_dam_discharge_or_absent():
     # 妄想でない: reach_dams が返す ID は必ず DAM_DISCHARGE の実在値
     for rid in config.REACHES:
-        river = config.REACHES[rid]["river"]
+        river = config.REACHES[rid].get("river", "")   # 湖は river 無し
         for name, dam_id in config.reach_dams(rid).items():
             assert config.DAM_DISCHARGE.get(river, {}).get(name) == dam_id
+
+
+def test_lakes_are_wired_with_elevation_and_no_river_keys():
+    lakes = [rid for rid in config.REACHES if config.is_lake(rid)]
+    assert lakes, "湖区間が最低1つある"
+    for rid in lakes:
+        r = config.REACHES[rid]
+        assert isinstance(r["elevation"], (int, float))
+        assert "river" not in r and "dams" not in r     # 河川キーは持たない
+        assert config.reach_dams(rid) == {}              # 湖はダム監視なし
+        # 湖の観測点は標高必須: 無いと lake_temp_offset が 0 になり標高補正が無効化する。
+        # (近傍でも 片品42106/榛名山42241 は降水専用で気温欠測になる罠への回帰ガード)
+        station = config.JMA_STATIONS[r["location"]]
+        assert isinstance(station.get("elevation"), (int, float)), \
+            f"{rid} の観測点 {r['location']} に elevation が無い→標高補正が無効化"
+        assert config.lake_temp_offset(rid) != 0 or r["elevation"] == station["elevation"]
+    # verified 湖が最低1つ (確信GOを出せる)
+    assert any(config.REACHES[rid]["source_confidence"] == "verified" for rid in lakes)

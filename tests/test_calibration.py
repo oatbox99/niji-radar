@@ -138,6 +138,15 @@ def test_reconcile_empty():
     assert r["n"] == 0 and r["rows"] == [] and "まだありません" in r["note"]
 
 
+def test_reconcile_lake_short_circuits_without_river_keyerror():
+    # 湖は river/water_station キーを持たない → 河川入力の組立てで KeyError を起こしていた回帰。
+    # 照合ソース(semantic_source)も無いため、クラッシュせず n=0「照合しない」を返す。
+    conn = _conn()
+    r = calibration.reconcile(conn, "sugenuma", P)
+    assert r["n"] == 0 and r["rows"] == []
+    assert "湖" in r["note"]
+
+
 def test_reconcile_matches_and_normalizes_dates():
     conn = _conn()
     _seed_weather(conn, 20, sunshine=5.0, temp=15.0)   # このパラメータで各日「絶好」

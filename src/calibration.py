@@ -155,6 +155,12 @@ def reconcile(conn: sqlite3.Connection, reach_id: str,
     """
     p = params or TroutParams()
     reach = config.REACHES[reach_id]
+    if config.is_lake(reach_id):
+        # 湖は現場ブログの体感照合ソースを持たない(semantic_source=None)。河川入力(river/water_station)
+        # も持たないため、照合系列は組まず「照合対象なし」を正直に返す。
+        return {"n": 0, "exact": 0, "near": 0, "miss": 0, "rows": [],
+                "note": "湖は現場報告（体感）の照合ソースを設定していません"
+                        "（表層水温＋季節からの推定判定のため、予実照合は行いません）。"}
     series = compute_series(
         decision.load_daily_inputs(conn, reach["location"], reach["river"],
                                    reach["water_station"]), p)

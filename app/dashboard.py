@@ -214,11 +214,19 @@ def _water_cr(v: decision.Verdict) -> None:
         f'<div class="card"><div class="k">🐟 C&Rリスク（水温連動）</div>'
         f'<div class="v">{cr_v}</div><div class="mean">{cr_mean}</div></div>',
         unsafe_allow_html=True)
-    cols[2].markdown(
-        f'<div class="card"><div class="k">🍃 濁り（水色）</div>'
-        f'<div class="v">{WATER_WORD.get(v.turbidity)}</div>'
-        f'<div class="mean">笹濁り=最好窓／クリア=警戒／泥濁り=竿NG</div></div>',
-        unsafe_allow_html=True)
+    if v.waterbody == "lake":
+        cols[2].markdown(
+            f'<div class="card"><div class="k">🪝 狙う深度（推定）</div>'
+            f'<div class="v" style="font-size:.98rem;line-height:1.4">'
+            f'{guide.lake_depth_note(v.water_temp_proxy)}</div>'
+            f'<div class="mean">躍層・DO・魚の層は実測源なし＝季節推定（中層を刻んで探る前提）</div></div>',
+            unsafe_allow_html=True)
+    else:
+        cols[2].markdown(
+            f'<div class="card"><div class="k">🍃 濁り（水色）</div>'
+            f'<div class="v">{WATER_WORD.get(v.turbidity)}</div>'
+            f'<div class="mean">笹濁り=最好窓／クリア=警戒／泥濁り=竿NG</div></div>',
+            unsafe_allow_html=True)
     note = guide.cr_note(v.cr_risk, v.catch_release)
     if note:
         (st.error if v.cr_risk == "nogo" else st.warning)("🐟 " + note)
@@ -261,8 +269,8 @@ def _stages(v: decision.Verdict) -> None:
                    "上の『魚』『釣れ方』が今の期待値です。")
 
 
-def _season() -> None:
-    note = guide.season_note()
+def _season(v: decision.Verdict) -> None:
+    note = (guide.lake_season_note() if v.waterbody == "lake" else guide.season_note())
     if note is None:
         return
     (st.warning if note["level"] == "warn" else st.info)("🗓️ " + note["msg"])
@@ -393,6 +401,17 @@ def _dam(v: decision.Verdict) -> None:
                "粗い目安です（実測ゲージなし・濁り本体は水位波よりさらに遅れて到達）。")
 
 
+def _lake_context(v: decision.Verdict) -> None:
+    """湖専用: 成層の因果（なぜ深度で釣果が決まるか）。河川の川マップ/ダムに相当する枠。"""
+    st.markdown("#### 🏞 なぜ深度で釣果が決まるのか（湖の成層）")
+    st.markdown(f'<div class="card" style="color:inherit">{guide.WHY_LAKE}</div>',
+                unsafe_allow_html=True)
+    st.info("🪝 " + guide.lake_depth_note(v.water_temp_proxy))
+    st.caption("⚠️ 湖は増水・濁り・上流ダム放流の判定を行いません（止水のため）。"
+               "表層水温は気温＋標高補正の推定で未較正、躍層・溶存酸素・魚の居る深度は"
+               "公開の実測源が無く季節推定です。結氷・水位・水色は現地/公式でご確認ください。")
+
+
 def _indicator_guide(v: decision.Verdict) -> None:
     with st.expander("📖 指標の読み方（高い/低いとどうなる）と判定の根拠・弱点", expanded=False):
         rows = "\n".join(
@@ -412,10 +431,11 @@ def _indicator_guide(v: decision.Verdict) -> None:
 
 def _sources(v: decision.Verdict) -> None:
     reach = config.REACHES[v.reach_id]
-    river, location = reach["river"], reach["location"]
+    location = reach["location"]
     code = config.JMA_STATIONS[location]["code"]
     jma = config.JMA_AMEDAS_PAGE.format(code=code)
-    water = config.RIVER_WATER_LEVEL.get(river, {}).get("yahoo_url")
+    river = reach.get("river")                       # 湖は river 無し
+    water = config.RIVER_WATER_LEVEL.get(river, {}).get("yahoo_url") if river else None
     off = reach.get("official_url")
     info = reach.get("info_url")
     catch = reach.get("catch_ref_url")
@@ -493,11 +513,16 @@ def main() -> None:
             _empty_state(reach_id)
             return
 
+        is_lake = v.waterbody == "lake"
         _hero(v)
         _datebar(v)
-        st.markdown("🟢 行くべし＝好条件 ／ 🟠 様子見＝決め手なし ／ 🔴 見送り＝増水・濁り・高水温 "
-                    "（C&R区間は魚の生存を優先）")
-        _season()
+        if is_lake:
+            st.markdown("🟢 行くべし＝表層が適水温・浅場が効く ／ 🟠 様子見＝深度を刻む "
+                        "／ 🔴 見送り＝営業期間外・表層高温 （C&R湖は魚の生存を優先）")
+        else:
+            st.markdown("🟢 行くべし＝好条件 ／ 🟠 様子見＝決め手なし ／ 🔴 見送り＝増水・濁り・高水温 "
+                        "（C&R区間は魚の生存を優先）")
+        _season(v)
         st.write("")
         _checklist(v)
         st.write("")
@@ -509,8 +534,11 @@ def main() -> None:
         st.write("")
         _outlook(v)
         st.write("")
-        _river(v)
-        _dam(v)
+        if is_lake:
+            _lake_context(v)
+        else:
+            _river(v)
+            _dam(v)
         st.write("")
         _sources(v)
         _indicator_guide(v)

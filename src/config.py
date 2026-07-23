@@ -29,10 +29,20 @@ JMA_STATIONS = {
     "上野村": {"code": "42396", "sunshine_estimated": True},   # 神流(日照推計)
     "前橋": {"code": "42251", "sunshine_estimated": False},    # 官署(日照実測)
     "桐生": {"code": "42266", "sunshine_estimated": True},
-    "中之条": {"code": "42186", "sunshine_estimated": True},   # 吾妻
-    "沼田": {"code": "42146", "sunshine_estimated": True},
+    "中之条": {"code": "42186", "sunshine_estimated": True, "elevation": 354},   # 吾妻／榛名湖
+    "沼田": {"code": "42146", "sunshine_estimated": True, "elevation": 390},
+    # 湖用(本プロジェクト調査・JMA amedastable の alt/elems で実在＆気温観測を確認)。
+    # elev は観測点標高で、湖面との差を気温減率(LAPSE_C_PER_100M)で表層水温プロキシに補正する。
+    # ⚠️ TRAP: 近傍の 片品(42106)・榛名山(42241) は elems=01000000 の降水専用で気温を観測しない。
+    #   → 気温観測点(elems 先頭=1)のうち湖に最も近い/標高差の小さいものを採用:
+    "藤原": {"code": "42046", "sunshine_estimated": True, "elevation": 700},    # 菅沼/丸沼/大尻沼
+    "草津": {"code": "42121", "sunshine_estimated": True, "elevation": 1223},   # 野反湖(近接・高標高で最精度)
     # TRAP: AMeDAS 上野(53112) は三重県 — 群馬・上野村は 神流(42396)。
 }
+
+# 気温減率(標高100m当たりの気温低下℃)。観測点→湖面の標高差を表層水温プロキシに反映する。
+# ⚠️ 気温減率であって水温補正の妥当性は未検証。標高差が大きい湖ほど誤差大。
+LAPSE_C_PER_100M = 0.6
 
 # --------------------------------------------------------------------------- #
 # River water level — categorical flood-stage per gauge (Yahoo mirror of 川の防災情報)。
@@ -204,11 +214,108 @@ REACHES = {
         "source_confidence": "参考",
         "notes": "下久保ダム放流で水位・濁りが人為的に急変。上野村とは真逆の挙動。",
     },
+
+    # ------------------------------------------------------------------- #
+    # 湖(止水)。河川と判定軸が別: 増水/濁り/ダム放流は無効、表層水温(標高補正)×季節×
+    # ターンオーバー×営業日で判定。⚠️躍層/DO/深度は公開実測源が無く季節推定に留まる(正直に明示)。
+    # 河川フィールド(river/water_station/dams)は持たない。elevation=湖面標高、shore_only=岸釣り限定。
+    # ------------------------------------------------------------------- #
+    "sugenuma": {
+        "label": "菅沼（片品・ボートC&R）",
+        "waterbody": "lake",
+        "location": "藤原",
+        "elevation": 1731,
+        "shore_only": False,          # 手漕ぎボートのみ
+        "methods": ["ルアー", "フライ"],
+        "catch_release": True,
+        "season": {"open": (6, 1), "close": (10, 31)},   # 指定営業日のみ・要確認
+        "closed_weekday": None,
+        "semantic_source": None,
+        "official_url": "https://sugenuma.com/fishing/",
+        "info_url": "https://sugenuma.com/fishing/",
+        "catch_ref_url": "https://anglers.jp/",
+        "source_confidence": "verified",
+        "notes": "標高1731m/水深75m/透明度15m。全C&R・バーブレスシングル・手漕ぎボートのみ。"
+                 "深湖で深度戦略が効く。営業は指定日のみ・金精峠開通(4月下旬)〜閉鎖依存。要漁協確認。",
+    },
+    "marunuma": {
+        "label": "丸沼（片品）",
+        "waterbody": "lake",
+        "location": "藤原",
+        "elevation": 1428,
+        "shore_only": False,
+        "methods": ["ルアー", "フライ", "エサ"],
+        "catch_release": False,       # キープ5尾まで(20cm以下はリリース)
+        "season": {"open": (4, 25), "close": (11, 30)},
+        "closed_weekday": None,
+        "semantic_source": None,
+        "official_url": "https://www.marunuma.jp/",
+        "info_url": "https://www.marunuma.jp/",
+        "catch_ref_url": "https://anglers.jp/",
+        "source_confidence": "verified",
+        "notes": "標高1428m。エサ/ルアー/フライ可・キープ5尾(20cm以下release)。菅沼より入門向け。"
+                 "金精峠開通(4月下旬)〜11月末。正確な期間・料金は要確認。",
+    },
+    "nozorilake": {
+        "label": "野反湖（中之条・六合／岸釣り）",
+        "waterbody": "lake",
+        "location": "草津",
+        "elevation": 1513,
+        "shore_only": True,           # ボート/カヌー禁止=岸釣りのみ
+        "methods": ["ルアー", "フライ", "エサ"],
+        "catch_release": False,
+        "season": {"open": (5, 1), "close": (11, 10)},
+        "closed_weekday": None,
+        "semantic_source": None,
+        "official_url": "https://www.town.nakanojo.gunma.jp/",
+        "info_url": "https://www.town.nakanojo.gunma.jp/",
+        "catch_ref_url": "https://anglers.jp/",
+        "source_confidence": "verified",
+        "notes": "標高1513m。岸釣りのみ→風向・岸アクセス重視、強風時は安全注意。"
+                 "5〜10月に月約3回ニジマス放流(放流直後が短期の好機)。遊漁5/1〜11/10。",
+    },
+    "oshirinuma": {
+        "label": "大尻沼（片品・予約制ボートC&R）",
+        "waterbody": "lake",
+        "location": "藤原",
+        "elevation": 1400,
+        "shore_only": False,
+        "methods": ["ルアー", "フライ"],
+        "catch_release": True,
+        "season": {"open": (4, 25), "close": (11, 30)},
+        "closed_weekday": None,
+        "semantic_source": None,
+        "official_url": "https://www.marunuma.jp/",   # 受付は環湖荘(丸沼)導線
+        "info_url": "https://www.marunuma.jp/",
+        "catch_ref_url": "https://anglers.jp/",
+        "source_confidence": "参考",
+        "notes": "標高1400m。ボート専用・全C&R・予約制。料金/ルールは二次情報のため要確認。",
+    },
+    "harunako": {
+        "label": "榛名湖（高崎）",
+        "waterbody": "lake",
+        "location": "中之条",
+        "elevation": 1084,
+        "shore_only": False,
+        "methods": ["ルアー", "フライ", "エサ"],
+        "catch_release": False,
+        "season": {"open": (3, 15), "close": (12, 15)},   # 冬季は結氷でワカサギ氷上へ移行
+        "closed_weekday": None,
+        "semantic_source": None,
+        "official_url": "https://www.gunfish.jp/turiba/harunaba.htm",
+        "info_url": "https://www.gunfish.jp/turiba/harunaba.htm",
+        "catch_ref_url": "https://anglers.jp/",
+        "source_confidence": "参考",
+        "notes": "標高1084m。近傍の榛名山AMeDASは気温を観測しないため、気温は中之条(354m)を"
+                 "標高差730mの気温減率で補正した推定(誤差大・参考)。ニジマス通年可は二次情報で要現地確認。"
+                 "冬季は結氷しワカサギ氷上釣りへ(トラウトは対象外)。",
+    },
 }
 
-# UI の区間セレクタ順 (verified を先頭に)。
+# UI の区間セレクタ順 (河川→湖、各 verified を先頭に)。
 UI_REACHES = ["kanna_ueno", "tone_maebashi", "agatsuma_bando",
-              "watarase_kiryu", "kanna_oniishi"]
+              "watarase_kiryu", "kanna_oniishi",
+              "sugenuma", "marunuma", "nozorilake", "oshirinuma", "harunako"]
 
 
 # --------------------------------------------------------------------------- #
@@ -225,21 +332,39 @@ def unique_locations() -> list:
 
 
 def unique_rivers() -> list:
-    """水位/ダム取得が必要な river の重複排除リスト。"""
+    """水位/ダム取得が必要な river の重複排除リスト(河川区間のみ・湖は除外)。"""
     seen = []
     for r in REACHES.values():
-        if r["river"] not in seen:
+        if r.get("waterbody", "river") == "river" and r["river"] not in seen:
             seen.append(r["river"])
     return seen
 
 
 def reach_dams(reach_id: str) -> dict:
-    """reach が監視するダムの {name: id} (ID未確認のダムは除外)。"""
+    """reach が監視するダムの {name: id} (ID未確認/湖は除外)。"""
     reach = REACHES[reach_id]
-    river_dams = DAM_DISCHARGE.get(reach["river"], {})
+    river_dams = DAM_DISCHARGE.get(reach.get("river", ""), {})
     return {name: river_dams[name] for name in reach.get("dams", []) if name in river_dams}
 
 
 def reach_dam_names(reach_id: str) -> list:
     """reach が監視するダム名 (ID有無を問わず。未確認の明示に使う)。"""
     return list(REACHES[reach_id].get("dams", []))
+
+
+def is_lake(reach_id: str) -> bool:
+    return REACHES[reach_id].get("waterbody", "river") == "lake"
+
+
+def lake_temp_offset(reach_id: str) -> float:
+    """湖: 観測点→湖面の標高差を気温減率で表層水温プロキシに反映するオフセット(℃)。
+
+    観測点より湖面が高ければ負(冷たい)。⚠️気温減率であり水温補正の妥当性は未検証。
+    """
+    reach = REACHES[reach_id]
+    st = JMA_STATIONS.get(reach["location"], {})
+    st_elev = st.get("elevation")
+    lake_elev = reach.get("elevation")
+    if st_elev is None or lake_elev is None:
+        return 0.0
+    return -LAPSE_C_PER_100M * (lake_elev - st_elev) / 100.0
