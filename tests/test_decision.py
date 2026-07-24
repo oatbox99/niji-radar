@@ -233,6 +233,20 @@ def test_rising_water_trend_blocks_go_and_checklist_row():
     assert row["ok"] is False and "上昇中" in row["detail"]
 
 
+def test_dam_fetch_blank_surfaces_caveat_on_first_screen():
+    # ID確認済みダムの fetch 全滅(dams_seen==0)を折り畳み内だけにせず caveat(第一画面)へ
+    dam = {"risk": False, "dams_seen": 0, "id_missing": [], "slope_known": 0}
+    v = _verdict("kanna_oniishi", _state(quality="好適", date=SUMMER), SEM_SASA,
+                 GOOD_WATER, today=SUMMER, dam=dam)
+    assert any("監視が空白" in c for c in v.caveats)
+    # id_missing がある場合は従来文言が優先(重複しない)
+    dam2 = {"risk": False, "dams_seen": 0, "id_missing": ["八ッ場"], "slope_known": 0}
+    v2 = _verdict("agatsuma_bando", _state(quality="好適", date=SUMMER), SEM_SASA,
+                  GOOD_WATER, today=SUMMER, dam=dam2)
+    assert any("八ッ場" in c for c in v2.caveats)
+    assert not any("監視が空白" in c for c in v2.caveats)
+
+
 def test_non_cr_unknown_water_temp_blocks_checklist_temp_row():
     # 非C&R区間で水温不明(cr=unknown): Gate3 は cr in (safe,caution) を GO 必須にしている。
     # checklist の水温行を「not catch_release で常時True」にしない(SSOT不整合の回帰ガード)。
