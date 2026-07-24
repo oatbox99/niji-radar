@@ -160,6 +160,21 @@ def load_forecast_inputs(conn: sqlite3.Connection, location: str) -> List[DailyI
     ]
 
 
+def _annotate_outlook_closed(outlook: Dict[str, Any], reach: Dict[str, Any]) -> None:
+    """予報上の推奨日(best/next_good/weekend)に営業/解禁ゲートを波及させる。
+
+    4段ゲートの合法/営業は釣果より上位 — 「今日はNO_GOだが予報は▲」という矛盾表示で
+    閉鎖区間への釣行(密漁リスク)を誘導しないため、期間外/定休日の日に closed=True を付す。
+    表示層(HP/dashboard)は closed の日を『行くべし』候補に出さない。
+    """
+    for key in ("best", "next_good"):
+        item = outlook.get(key)
+        if item:
+            item["closed"] = not reach_open(reach, item["date"])["open"]
+    for w in outlook.get("weekend", []):
+        w["closed"] = not reach_open(reach, w["date"])["open"]
+
+
 def _weekend_outlook(states: List[TState]) -> Optional[Dict[str, Any]]:
     """予報期間の TSI をまとめる (トレンド + 次の好機)。"""
     if not states:
@@ -432,6 +447,10 @@ def build_verdict(
     if dam and dam.get("id_missing"):
         caveats.append("上流ダム（" + "・".join(dam["id_missing"]) +
                        "）の放流データは未取得です（濁り放流の判定に空白があります）")
+    elif dam is not None and not dam.get("risk") and dam.get("dams_seen", 0) == 0:
+        # ID確認済みなのに fetch が全滅 = 濁り前兆の監視が空白。折り畳み内でなく第一画面へ。
+        caveats.append("上流ダムの放流データが取得できていません"
+                       "（濁り前兆の監視が空白です。平穏の確認ではありません）")
     caveats.append("水温閾値は公開エビデンスからの推定です（実釣データによる較正は未実施）")
     conf = max(0.10, min(0.95, conf))
 
@@ -690,6 +709,7 @@ def _lake_report(conn: sqlite3.Connection, reach_id: str, p: TroutParams,
                 v.outlook[key]["reliability"] = rel.get(v.outlook[key]["date"])
         for w in v.outlook.get("weekend", []):
             w["reliability"] = rel.get(w["date"])
+        _annotate_outlook_closed(v.outlook, reach)
     return v
 
 
@@ -763,6 +783,7 @@ def reach_report(
                 item["reliability"] = rel.get(item["date"])
         for w in v.outlook.get("weekend", []):
             w["reliability"] = rel.get(w["date"])
+        _annotate_outlook_closed(v.outlook, reach)
     v.stations = latest_station_statuses(conn, river)
     return v
 

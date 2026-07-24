@@ -335,7 +335,11 @@ def _outlook_summary(v: decision.Verdict) -> None:
             parts.append(f"**{w['date'][5:]}({w['wd']})** 適性{w['tsi']:.0f}・{w['quality']}{rel}")
         st.markdown("🗓️ **次の週末**： " + "　".join(parts))
     ng = o.get("next_good")
-    if ng:
+    if ng and ng.get("closed"):
+        # 合法/営業ゲートは釣果より上位 — 期間外の日を「次に行くなら」と推奨しない。
+        st.info("🎯 予報上は水温が好適になる日がありますが、営業/解禁期間外（または定休日）"
+                "の可能性があるため候補には出しません。営業期間の確認が先です。")
+    elif ng:
         rel = f"・予報信頼度{ng['reliability']}" if ng.get("reliability") else ""
         # 参考区間は確信GOを出さない方針。前向きの「次に行くなら」も断定を弱めて目安と明示。
         tref = "（参考区間・予報上の目安）" if v.source_confidence != "verified" else ""
